@@ -8,7 +8,7 @@
     </PropertyGroup>
 
     <ItemGroup>
-      <PackageReference Include="Elastic.Clients.Elasticsearch" Version="8.14.8" />
+      <PackageReference Include="NEST" Version="7.17.5" />
     </ItemGroup>
 
 </Project>

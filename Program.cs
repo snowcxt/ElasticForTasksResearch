@@ -1,90 +1,68 @@
-﻿using System;
-using Elastic.Clients.Elasticsearch;
-using Elastic.Clients.Elasticsearch.QueryDsl;
+﻿using Nest;
 
-var client = new ElasticsearchClient();
+var client = new ElasticClient();
 
+InitTasks();
 
-// client.setDefaultHeaders(arrayOf(BasicHeader("Content-type", "application/json")));
+var documents = Query();
 
-var task1 = new DsTask
+Console.WriteLine($"query result: {documents.Count()}");
+
+void InitTasks()
 {
-	Id = Guid.NewGuid(),
-	Type = Type.CLM,
-	DueDate =
-		new DateTime(2009, 11, 15),
-	Assignee = new Assignee()
+	var tasks = new List<DsTask>();
+	var baseTime = new DateTime(2024, 01, 01);
+	var random = new Random();
+
+	for (var i = 0; i < 100; i++)
 	{
-		UserId = Guid.NewGuid()
-	}
-};
-
-var task2 = new DsTask
-{
-	Id = Guid.NewGuid(),
-	Type = Type.ESign,
-	DueDate =
-		new DateTime(2024, 01, 15),
-	Assignee = new Assignee()
-	{
-		GroupId = Guid.NewGuid()
-	}
-};
-
-// await AddTask(task1);
-// await AddTask(task2);
-
-await Query();
-
-// var response = await client.GetAsync<DsTask>("85978e60-b6e8-4f23-a919-138236d6490f", idx => idx.Index("task-index"));
-//
-// if (response.IsValidResponse)
-// {
-// 	var tweet = response.Source;
-// }
-
-
-async Task<string> AddTask(Task task)
-{
-	var response = await client.IndexAsync(task, index: "task-index");
-
-
-	if (response.IsValidResponse)
-	{
-		Console.WriteLine($"Index document with ID {response.Id} succeeded.");
-		return response.Id;
-	}
-
-	return string.Empty;
-}
-
-async Task Query()
-{
-	var request = new SearchRequest("task-index")
-	{
-		From = 0,
-		Size = 10,
-		Query = new TermQuery("dueDate") { Value = "2024-01-15T00:00:00" }
-	};
-
-	try
-	{
-		// Console.WriteLine(request.to);
-		var response = await client.SearchAsync<DsTask>(request);
-
-
-		if (response.IsValidResponse)
+		baseTime = baseTime.AddDays(random.Next(1, 50));
+		tasks.Add(new DsTask
 		{
-			var tweet = response.Documents.FirstOrDefault();
+			Id = Guid.NewGuid(),
+			Type = (DsTaskType)(i % 3),
+			DueDate = baseTime,
+			Assignee = new Assignee()
+			{
+				UserId = i % 2 == 0 ? Guid.NewGuid() : null,
+				GroupId = i % 2 == 0 ? null : Guid.NewGuid(),
+			}
+		});
+	}
+
+	var indexManyResponse = client.IndexMany<DsTask>(tasks, "task-index");
+
+	if (indexManyResponse.Errors)
+	{
+		foreach (var itemWithError in indexManyResponse.ItemsWithErrors)
+		{
+			Console.WriteLine($"Failed to index document {itemWithError.Id}: {itemWithError.Error}");
 		}
 	}
-	catch (Exception ex)
-	{
-		Console.WriteLine(ex.Message);
-	}
 }
 
-public enum Type
+IEnumerable<DsTask> Query()
+{
+	var searchResponse = client.Search<DsTask>(s => s
+		.Index("task-index")
+		.Query(q => q
+			.DateRange(r => r
+				.Field(f => f.DueDate)
+				.GreaterThanOrEquals(new DateTime(2024, 01, 01))
+				.LessThan(new DateTime(2025, 01, 01))
+			)
+		)
+	);
+
+	if (searchResponse.IsValid)
+	{
+		return searchResponse.Documents;
+	}
+
+	return null;
+}
+
+public enum DsTaskType
 {
 	CLM,
 	IDV,
@@ -93,16 +71,16 @@ public enum Type
 
 public class DsTask
 {
-	[T]
-	public Guid Id { get; set; }
-	public Type Type { get; set; }
-	public DateTime DueDate { get; set; }
+	[Keyword] public Guid Id { get; set; }
+
+	[Keyword] public DsTaskType Type { get; set; }
+
+	[Date] public DateTime DueDate { get; set; }
 	public Assignee Assignee { get; set; }
 }
 
 public class Assignee
 {
-	public Guid Id { get; set; }
-	public Guid? UserId { get; set; }
-	public Guid? GroupId { get; set; }
+	[Keyword] public Guid? UserId { get; set; }
+	[Keyword] public Guid? GroupId { get; set; }
 }
